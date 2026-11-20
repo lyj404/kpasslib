@@ -5,6 +5,7 @@ import 'package:convert/convert.dart';
 import 'package:kpasslib/kpasslib.dart';
 import 'package:kpasslib/src/kdbx/kdbx_autotype.dart';
 import 'package:test/test.dart';
+import 'package:xml/xml.dart';
 
 import '../test_resources.dart';
 import 'test_database.dart';
@@ -1153,6 +1154,96 @@ void main() {
       expect(db.meta.generator, 'KPassLib');
       expect(db.header.credentials.hash, credentials2.hash);
       expect(_getTestDb().isEqual(db), true);
+    });
+
+    test('preserves protected fields with protected binary in KDBX 3',
+        () async {
+      final credentials =
+          KdbxCredentials(password: ProtectedData.fromString('pw'));
+      final db = KdbxDatabase.create(credentials: credentials, name: 'v3')
+        ..version = (3, 1);
+
+      final entry = db.createEntry(parent: db.root);
+      entry.fields['Password'] =
+          KdbxTextField.fromText(text: 'secret-value', protected: true);
+      entry.fields['PIN'] =
+          KdbxTextField.fromText(text: '1234', protected: true);
+      entry.binaries['secret.bin'] = db.binaries.add(
+        ProtectedBinary(protectedData: ProtectedData.fromString('binary')),
+      );
+      entry.pushHistory();
+      entry.fields['Password'] =
+          KdbxTextField.fromText(text: 'newer-value', protected: true);
+
+      var current = db;
+      for (var round = 0; round < 2; round++) {
+        current = await KdbxDatabase.fromBytes(
+          data: await current.save(),
+          credentials: credentials,
+        );
+        final savedEntry = current.root.entries.single;
+        expect(savedEntry.fields['Password']?.text, 'newer-value');
+        expect(savedEntry.fields['PIN']?.text, '1234');
+        expect(
+          savedEntry.history.single.fields['Password']?.text,
+          'secret-value',
+        );
+        final binary =
+            current.binaries.getByRef(savedEntry.binaries['secret.bin']!);
+        expect(binary?.data, 'binary'.codeUnits);
+      }
+    });
+
+    test('exports KDBX 4.1 custom data and icon timestamps as ISO 8601 in XML',
+        () {
+      final credentials =
+          KdbxCredentials(password: ProtectedData.fromString('pw'));
+      final modTime = DateTime.utc(2021, 1, 20, 18, 10, 44);
+      final db = KdbxDatabase.create(credentials: credentials, name: 'v41')
+        ..version = (4, 1);
+
+      db.meta.customData.map['meta_key'] =
+          KdbxCustomItem(value: 'val', modification: KdbxTime(modTime));
+      db.meta.customIcons[KdbxUuid.random()] = KdbxCustomIcon(
+        data: [1, 2, 3],
+        name: 'icon',
+        modified: KdbxTime(modTime),
+      );
+      final entry = db.createEntry(parent: db.root);
+      entry.customData = KdbxCustomData()
+        ..map['entry_key'] =
+            KdbxCustomItem(value: 'val2', modification: KdbxTime(modTime));
+
+      final xmlString = db.exportToXmlString();
+      final doc = XmlDocument.parse(xmlString);
+      final iso = modTime.toIso8601String();
+
+      final customDataTimes = doc
+          .findAllElements('CustomData')
+          .expand((e) => e.findAllElements('LastModificationTime'))
+          .map((e) => e.innerText)
+          .toList();
+      expect(customDataTimes, [iso, iso]);
+
+      final iconTimes = doc
+          .findAllElements('CustomIcons')
+          .expand((e) => e.findAllElements('LastModificationTime'))
+          .map((e) => e.innerText)
+          .toList();
+      expect(iconTimes, [iso]);
+
+      final reread = KdbxDatabase.fromXmlString(
+        xmlString: xmlString,
+        credentials: credentials,
+      );
+      expect(
+          reread.meta.customData.map['meta_key']?.modification.time, modTime);
+      expect(reread.meta.customIcons.values.single.modified.time, modTime);
+      expect(
+        reread.root.entries.single.customData?.map['entry_key']?.modification
+            .time,
+        modTime,
+      );
     });
   });
 }

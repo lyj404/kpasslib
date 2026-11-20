@@ -4,6 +4,11 @@ import 'package:collection/collection.dart';
 import 'package:kpasslib/kpasslib.dart';
 import 'package:xml/xml.dart';
 
+/// Creates an unprefixed [XmlName] compatible with both xml 6 and 7.
+// TODO: Remove this helper and use XmlName.parts when dropping xml 6 support.
+// ignore: deprecated_member_use
+XmlName xmlName(String name) => XmlName(name);
+
 /// An utility functions to work with XML.
 abstract final class XmlUtils {
   static const _tagsSplitRegex = r'\s*[;,:]\s*';
@@ -64,7 +69,7 @@ abstract final class XmlUtils {
           '<?xml version="1.0" encoding="utf-8" $extraAttributes?><$rootNode/>');
 
   /// Appends the [children] to the [parent] XML node.
-  static addChildren({
+  static void addChildren({
     required XmlNode parent,
     required List<(String, Object?)> children,
     bool binaryTime = false,
@@ -76,7 +81,7 @@ abstract final class XmlUtils {
       final text = e.$2;
       return text == null
           ? null
-          : (XmlElement(XmlName(e.$1))..innerText = text);
+          : (XmlElement(xmlName(e.$1))..innerText = text);
     }).nonNulls);
   }
 
@@ -86,7 +91,7 @@ abstract final class XmlUtils {
     List<(String, Object?)>? children,
     bool binaryTime = false,
   }) {
-    final node = XmlElement(XmlName(name));
+    final node = XmlElement(xmlName(name));
 
     if (children != null) {
       addChildren(

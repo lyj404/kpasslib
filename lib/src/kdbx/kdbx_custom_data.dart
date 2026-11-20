@@ -70,13 +70,16 @@ class KdbxCustomData {
   }
 
   /// Serializes the custom data to an XML element.
-  XmlElement? toXml({required bool includeModificationTime}) {
+  XmlElement? toXml({
+    required bool includeModificationTime,
+    bool binaryTime = true,
+  }) {
     if (map.isEmpty) {
       return null;
     }
 
     return XmlElement(
-      XmlName(XmlElem.customData),
+      xmlName(XmlElem.customData),
       [],
       map.entries.map(
         (e) => XmlUtils.createElement(
@@ -87,7 +90,7 @@ class KdbxCustomData {
               if (includeModificationTime)
                 (XmlElem.lastModTime, e.value.modification)
             ],
-            binaryTime: true),
+            binaryTime: binaryTime),
       ),
     );
   }
